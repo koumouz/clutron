@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Pachinko Peg Board Demo</title>
+  <title>Pachinko Peg Board Demo – Training Switch + Counters</title>
   <style>
     body {
       margin: 0;
@@ -60,16 +60,20 @@
     const H = canvas.height;
 
     const boardImage = new Image();
-    boardImage.src = "pachinko-board.png"; // change if your filename differs
+    boardImage.src = ""; // change if needed
 
-    // Physics parameters (less bouncy)
+    // Toggle this to illustrate "trained" vs "untrained"
+    const trained = false; // true = biased bigger pegs on the left
+
+    // Physics parameters
     const gravity = 0.23;
     const ballRadius = 10;
-    const pegRadius = 6;
+    const smallPegRadius = 6;
+    const bigPegRadius = 11;
     const wallBounce = 0.3;
     const pegBounce = 0.55;
 
-    // Peg layout: triangular grid, initially independent of walls
+    // Peg layout: triangular grid
     const pegs = [];
     (function createPegs() {
       const rows = 9;
@@ -78,6 +82,7 @@
       const verticalSpacing = 55;
       const horizontalSpacing = 45;
       const centerX = W / 2;
+      const totalHeight = (rows - 1) * verticalSpacing;
 
       for (let row = 0; row < rows; row++) {
         const y = topOffset + row * verticalSpacing;
@@ -86,14 +91,26 @@
         const startX =
           centerX - rowWidth / 2 + (row % 2 === 0 ? 0 : horizontalSpacing / 2);
 
+        // Diagonal boundary used only when trained === true
+        const rowFrac = (y - topOffset) / totalHeight; // 0 at top, 1 at bottom
+        const diagonalBoundaryX = centerX - 40 + rowFrac * 70;
+
         for (let c = 0; c < rowCols; c++) {
           const x = startX + c * horizontalSpacing;
-          pegs.push({ x, y });
+
+          let isBig = false;
+          if (trained) {
+            // In the "trained" case, pegs on the left of the diagonal are bigger
+            isBig = x < diagonalBoundaryX;
+          }
+
+          const radius = isBig ? bigPegRadius : smallPegRadius;
+          pegs.push({ x, y, radius, isBig });
         }
       }
     })();
 
-    // Compute walls so they are just outside all pegs
+    // Compute walls just outside all pegs
     let minPegX = Infinity;
     let maxPegX = -Infinity;
     let minPegY = Infinity;
@@ -108,7 +125,7 @@
     let wallLeft = Math.max(ballRadius, minPegX - horizontalPadding);
     let wallRight = Math.min(W - ballRadius, maxPegX + horizontalPadding);
 
-    // Buckets based on final wall positions
+    // Buckets at bottom based on wall positions
     const bucketCount = 7;
     const bucketHeight = 60;
     const bucketTopY = H - bucketHeight;
@@ -124,7 +141,8 @@
         x,
         y: bucketTopY,
         width: bucketWidth,
-        height: bucketHeight
+        height: bucketHeight,
+        count: 0
       });
     }
 
@@ -157,7 +175,7 @@
           this.vx = -this.vx * wallBounce;
         }
 
-        // Buckets: treat top as floor and snap into one bucket
+        // Buckets: treat top as floor and snap into a bucket + increment counter
         if (this.y + this.radius >= bucketTopY) {
           const clampedX = Math.max(
             wallLeft,
@@ -173,15 +191,18 @@
           this.vx = 0;
           this.vy = 0;
           this.stopped = true;
+
+          // Increment bucket counter
+          bucket.count += 1;
           return;
         }
 
-        // Peg collisions
+        // Peg collisions (per-peg radius)
         for (const peg of pegs) {
           const dx = this.x - peg.x;
           const dy = this.y - peg.y;
           const dist = Math.hypot(dx, dy);
-          const minDist = this.radius + pegRadius;
+          const minDist = this.radius + peg.radius;
 
           if (dist < minDist && dist > 0.0001) {
             const overlap = minDist - dist;
@@ -203,6 +224,8 @@
       }
 
       draw(ctx) {
+	if (this.stopped) return; // Don't draw balls once they fall in buckets
+
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
         ctx.fillStyle = "#f25c54";
@@ -215,12 +238,10 @@
 
     const balls = [new Ball()];
 
-    // Button to drop a new ball
     document.getElementById('dropBtn').addEventListener('click', () => {
       balls.push(new Ball());
     });
 
-    // (Optional) still allow clicking the canvas to drop balls
     canvas.addEventListener('click', () => {
       balls.push(new Ball());
     });
@@ -245,27 +266,38 @@
       ctx.stroke();
 
       // Pegs
-      ctx.fillStyle = "rgba(60, 80, 95, 0.95)";
       for (const peg of pegs) {
         ctx.beginPath();
-        ctx.arc(peg.x, peg.y, pegRadius, 0, Math.PI * 2);
+        ctx.arc(peg.x, peg.y, peg.radius, 0, Math.PI * 2);
+        ctx.fillStyle = peg.isBig
+          ? "rgba(40, 60, 110, 0.95)"   // bigger/darker when trained
+          : "rgba(120, 140, 170, 0.9)"; // smaller/lighter
         ctx.fill();
       }
 
-      // Buckets
+      // Buckets + counters
       ctx.strokeStyle = bucketColor;
       ctx.lineWidth = bucketLineThickness;
       ctx.beginPath();
-      // Top line
       ctx.moveTo(wallLeft, bucketTopY);
       ctx.lineTo(wallRight, bucketTopY);
-      // Vertical separators
       for (let i = 0; i <= bucketCount; i++) {
         const x = wallLeft + i * bucketWidth;
         ctx.moveTo(x, bucketTopY);
         ctx.lineTo(x, H);
       }
       ctx.stroke();
+
+      // Draw counts centered in each bucket
+      ctx.fillStyle = "#333";
+      ctx.font = "14px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      for (const bucket of buckets) {
+        const cx = bucket.x + bucket.width / 2;
+        const cy = bucketTopY + bucketHeight / 2;
+        ctx.fillText(String(bucket.count), cx, cy);
+      }
     }
 
     function loop() {
@@ -273,8 +305,10 @@
       drawBoard();
 
       for (const ball of balls) {
-        ball.update();
-        ball.draw(ctx);
+        balls.length && balls.forEach(ball => {
+          ball.update();
+          ball.draw(ctx);
+        });
       }
       requestAnimationFrame(loop);
     }
