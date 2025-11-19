@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Pachinko Peg Board Demo – Training Switch + Counters</title>
+  <title>Pachinko Peg Board Demo – Clickable Weights</title>
   <style>
     body {
       margin: 0;
@@ -60,16 +60,13 @@
     const H = canvas.height;
 
     const boardImage = new Image();
-    boardImage.src = ""; // change if needed
-
-    // Toggle this to illustrate "trained" vs "untrained"
-    const trained = false; // true = biased bigger pegs on the left
+    boardImage.src = "pachinko-board.png"; // change if needed
 
     // Physics parameters
     const gravity = 0.23;
     const ballRadius = 10;
-    const smallPegRadius = 6;
-    const bigPegRadius = 11;
+    const basePegRadius = 6;
+    const enlargedFactor = 2.0;
     const wallBounce = 0.3;
     const pegBounce = 0.55;
 
@@ -91,21 +88,15 @@
         const startX =
           centerX - rowWidth / 2 + (row % 2 === 0 ? 0 : horizontalSpacing / 2);
 
-        // Diagonal boundary used only when trained === true
-        const rowFrac = (y - topOffset) / totalHeight; // 0 at top, 1 at bottom
-        const diagonalBoundaryX = centerX - 40 + rowFrac * 70;
-
         for (let c = 0; c < rowCols; c++) {
           const x = startX + c * horizontalSpacing;
-
-          let isBig = false;
-          if (trained) {
-            // In the "trained" case, pegs on the left of the diagonal are bigger
-            isBig = x < diagonalBoundaryX;
-          }
-
-          const radius = isBig ? bigPegRadius : smallPegRadius;
-          pegs.push({ x, y, radius, isBig });
+          pegs.push({
+            x,
+            y,
+            radius: basePegRadius,
+            baseRadius: basePegRadius,
+            isBig: false
+          });
         }
       }
     })();
@@ -192,7 +183,6 @@
           this.vy = 0;
           this.stopped = true;
 
-          // Increment bucket counter
           bucket.count += 1;
           return;
         }
@@ -224,7 +214,7 @@
       }
 
       draw(ctx) {
-	if (this.stopped) return; // Don't draw balls once they fall in buckets
+        if (this.stopped) return; // don't draw balls sitting in buckets
 
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
@@ -242,8 +232,32 @@
       balls.push(new Ball());
     });
 
-    canvas.addEventListener('click', () => {
-      balls.push(new Ball());
+    // Clicking on the canvas: enlarge the nearest peg (once)
+    canvas.addEventListener('click', (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+
+      let closestPeg = null;
+      let closestDist = Infinity;
+
+      for (const peg of pegs) {
+        const dx = x - peg.x;
+        const dy = y - peg.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestPeg = peg;
+        }
+      }
+
+      // Only enlarge if click is reasonably close to a peg
+      if (closestPeg && closestDist <= closestPeg.radius + 12) {
+        if (!closestPeg.isBig) {
+          closestPeg.radius = closestPeg.baseRadius * enlargedFactor;
+          closestPeg.isBig = true;
+        }
+      }
     });
 
     function drawBoard() {
@@ -270,8 +284,8 @@
         ctx.beginPath();
         ctx.arc(peg.x, peg.y, peg.radius, 0, Math.PI * 2);
         ctx.fillStyle = peg.isBig
-          ? "rgba(40, 60, 110, 0.95)"   // bigger/darker when trained
-          : "rgba(120, 140, 170, 0.9)"; // smaller/lighter
+          ? "rgba(40, 60, 110, 0.95)"   // bigger/darker when clicked
+          : "rgba(120, 140, 170, 0.9)"; // default
         ctx.fill();
       }
 
@@ -288,7 +302,6 @@
       }
       ctx.stroke();
 
-      // Draw counts centered in each bucket
       ctx.fillStyle = "#333";
       ctx.font = "14px system-ui, sans-serif";
       ctx.textAlign = "center";
@@ -305,10 +318,8 @@
       drawBoard();
 
       for (const ball of balls) {
-        balls.length && balls.forEach(ball => {
-          ball.update();
-          ball.draw(ctx);
-        });
+        ball.update();
+        ball.draw(ctx);
       }
       requestAnimationFrame(loop);
     }
